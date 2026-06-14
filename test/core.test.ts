@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { benchmarkCallCount, benchmarkConfig } from "../src/benchmark.ts";
+import { benchmarkCallCount, benchmarkConfig, normalizeComparativeJudge } from "../src/benchmark.ts";
 import { DEFAULT_CONFIG, normalizeConfig } from "../src/config.ts";
 import { completionOptions, resolveUsableModel } from "../src/models.ts";
 import { findLastFusionResult } from "../src/session.ts";
@@ -47,6 +47,24 @@ describe("normalization helpers", () => {
 		expect(normalizeStopReason("END_TURN")).toBe("stop");
 		expect(normalizeStopReason("tool_calls")).toBe("toolUse");
 		expect(normalizeStopReason(undefined)).toBe("unknown");
+	});
+
+	test("normalizes comparative judge scores and winner", () => {
+		const decision = normalizeComparativeJudge(JSON.stringify({
+			scores: {
+				answer_1: { quality: 11, correctness: "9", completeness: 8, clarity: 7, actionability: 6, notes: ["strong"] },
+				answer_2: { quality: 0, correctness: 1, completeness: 1, clarity: 1, actionability: 1 },
+			},
+			ranking: ["answer_1", "answer_2"],
+			winner: "answer_1",
+			fusion_gain: "large",
+			fusion_strengths: ["combined caveats"],
+		}), ["answer_1", "answer_2"]);
+
+		expect(decision.winner).toBe("answer_1");
+		expect(decision.scores.answer_1.quality).toBe(10);
+		expect(decision.scores.answer_2.quality).toBe(1);
+		expect(decision.fusion_gain).toBe("large");
 	});
 
 	test("tracks missing required sections without changing candidates otherwise", () => {

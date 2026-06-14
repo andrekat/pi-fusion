@@ -96,3 +96,50 @@ export interface BenchmarkMessageDetails {
 	profile: string;
 	results: BenchmarkCaseResult[];
 }
+
+export interface ComparativeAnswer {
+	id: string;
+	label: string;
+	kind: "single" | "fusion";
+	modelRef?: string;
+	text: string;
+	durationMs: number;
+	stopReason?: string;
+	usage?: AssistantMessage["usage"];
+	error?: string;
+	fusionResult?: FusionResult;
+}
+
+export interface ComparativeAnswerScore {
+	quality: number;
+	correctness: number;
+	completeness: number;
+	clarity: number;
+	actionability: number;
+	notes: string[];
+}
+
+export interface ComparativeJudgeDecision {
+	winner: string;
+	ranking: string[];
+	scores: Record<string, ComparativeAnswerScore>;
+	why_winner: string;
+	fusion_gain: "none" | "small" | "medium" | "large";
+	fusion_strengths: string[];
+	fusion_weaknesses: string[];
+}
+
+export interface ComparativeBenchmarkCaseResult {
+	case: BenchmarkCase;
+	answers: ComparativeAnswer[];
+	judgeModel: string;
+	judgeRaw: string;
+	judge: ComparativeJudgeDecision;
+	durationMs: number;
+	error?: string;
+}
+
+export interface ComparativeBenchmarkMessageDetails {
+	profile: string;
+	results: ComparativeBenchmarkCaseResult[];
+}

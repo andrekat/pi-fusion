@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { BorderedLoader } from "@earendil-works/pi-coding-agent";
-import { runBenchmarkCommand } from "./benchmark.ts";
+import { runBenchmarkCommand, runComparativeBenchmarkCommand } from "./benchmark.ts";
 import { configPath, configSummary, DEFAULT_CONFIG, loadConfig, normalizeConfig, saveGlobalConfig } from "./config.ts";
 import { runFusion } from "./fusion.ts";
 import { modelRef, parseModelRef, resolveModel } from "./models.ts";
@@ -211,8 +211,13 @@ export function registerCommands(pi: ExtensionAPI): void {
 	});
 
 	pi.registerCommand("fuse-bench", {
-		description: "Run bounded real-provider benchmarks: /fuse-bench [dry|quick|standard|full]",
+		description: "Run bounded benchmarks: /fuse-bench [dry|quick|standard|full|compare quick]",
 		handler: async (args, ctx) => runBenchmarkCommand(pi, ctx, args),
+	});
+
+	pi.registerCommand("fuse-bench-compare", {
+		description: "Compare solo panel-model answers against Fusion: /fuse-bench-compare [dry|quick|standard|full]",
+		handler: async (args, ctx) => runComparativeBenchmarkCommand(pi, ctx, args),
 	});
 
 	pi.registerCommand("fuse-view", {

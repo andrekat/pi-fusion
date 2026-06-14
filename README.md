@@ -13,6 +13,7 @@ I checked npm/GitHub/web search for an exact `pi-fusion` package and did not fin
 - `/fuse-settings` — TUI settings for panel, judge, final writer, context, and strategy
 - `/fuse-status` — show current config
 - `/fuse-bench [dry|quick|standard|full]` — bounded real-provider benchmark suite
+- `/fuse-bench compare [dry|quick|standard|full]` or `/fuse-bench-compare [dry|quick|standard|full]` — compare each panel model solo against Fusion synthesis
 - `/fuse-view` — open the last Fusion answer in a tabbed TUI viewer
 
 ## Default model setup
@@ -50,6 +51,8 @@ Then in Pi:
 /fuse-view
 /fuse-bench dry
 /fuse-bench quick
+/fuse-bench-compare dry
+/fuse-bench-compare quick
 ```
 
 ## Config files
@@ -92,3 +95,31 @@ Profiles:
 - `/fuse-bench full` — 5 cases
 
 The benchmark reports latency, judge confidence, winner, required-section completeness, normalized stop reasons, critical issue count, and estimated API cost from provider usage metadata when available. Expand the benchmark message to inspect the full final synthesis, judge JSON/raw output, and full candidate answers. It is a lightweight signal, not a formal eval.
+
+### Solo vs Fusion quality benchmark
+
+`/fuse-bench-compare` runs the same benchmark cases three ways with the default setup:
+
+1. Claude Opus solo
+2. OpenAI Codex GPT-5.5 solo
+3. Fusion: Claude + GPT-5.5 panel → judge → final synthesis
+
+Then a blind quality judge scores the anonymized outputs on correctness, completeness, clarity, actionability, and overall quality.
+
+Example standard run with the default models (`/fuse-bench-compare standard`, 3 cases):
+
+```text
+Quality score, 1–10 higher is better
+
+Fusion                           ██████████████░░ 9.0  wins:2/3  avg:65.0s  avg cost:$0.143
+openai-codex/gpt-5.5             █████████████░░░ 8.3  wins:1/3  avg:16.6s  avg cost:$0.023
+anthropic/claude-opus-4-8        █████████████░░░ 8.0  wins:0/3  avg:18.2s  avg cost:$0.031
+```
+
+| Approach | Avg quality | Wins | Avg latency | Avg cost | Takeaway |
+|---|---:|---:|---:|---:|---|
+| Fusion | 9.0 | 2/3 | 65.0s | $0.143 | Best quality on planning/review tasks; pays a latency/cost premium. |
+| OpenAI Codex GPT-5.5 solo | 8.3 | 1/3 | 16.6s | $0.023 | Fastest/cheapest; won the small bugfix case outright. |
+| Claude Opus 4.8 solo | 8.0 | 0/3 | 18.2s | $0.031 | Strong solo baseline, but Fusion kept more cross-model caveats. |
+
+Treat this as directional: it measures whether Fusion improves the judged answer, while also showing when a single flagship model is already enough.

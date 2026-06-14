@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { Box, Markdown, Text } from "@earendil-works/pi-tui";
-import type { BenchmarkCase, BenchmarkCaseResult, BenchmarkMessageDetails, CandidateAnswer, FusionConfig, FusionResult } from "./types.ts";
+import type { BenchmarkCase, BenchmarkCaseResult, BenchmarkMessageDetails, CandidateAnswer, ComparativeAnswer, ComparativeBenchmarkCaseResult, ComparativeBenchmarkMessageDetails, FusionConfig, FusionResult } from "./types.ts";
 import { bulletList, estimatedCost, excerpt, formatCost, formatDuration, tableCell } from "./utils.ts";
 
 export function formatFusionMessage(result: FusionResult, showIntermediate: boolean): string {
@@ -140,6 +140,104 @@ export function formatBenchmarkResults(profile: string, config: FusionConfig, re
 	return `## Pi Fusion benchmark (${profile})\n\nThis is a lightweight benchmark using your configured flagship models, but with bounded prompts, no conversation context, and capped output tokens. Treat the score as a smoke/performance/value signal, not a formal eval.\n\n**Config**\n- Panel models: ${config.panelModels.join(", ")}\n- Judge: ${config.judgeModel || "(auto)"}\n- Final: ${config.finalModel || "(auto)"}\n- Output caps: panel ${config.panelMaxTokens}, judge ${config.judgeMaxTokens}, final ${config.finalMaxTokens}\n- Model calls attempted: ${benchmarkCallCount(config, results.map((item) => item.case))}\n\n**Summary**\n- Successful cases: ${successful.length}/${results.length}\n- Average judge confidence: ${successful.length ? `${Math.round(avgConfidence)}%` : "n/a"}\n- Total duration: ${formatDuration(totalDuration)}\n- Estimated total API cost: ${formatCost(totalCost)}\n\n| # | Case | Confidence | Winner | Time | Cost | Notes |\n|---:|---|---:|---|---:|---:|---|\n${rows}\n\n## Per-case comparison notes\n\n${details}`;
 }
 
+function comparativeAnswerCost(answer: ComparativeAnswer): number {
+	if (answer.kind === "fusion" && answer.fusionResult) return estimatedCost(answer.fusionResult);
+	return answer.usage?.cost.total ?? 0;
+}
+
+function answerDisplay(answer: ComparativeAnswer): string {
+	return answer.kind === "fusion" ? "Fusion" : answer.modelRef || answer.label;
+}
+
+function scoreBar(score: number, width = 16): string {
+	const clamped = Math.max(0, Math.min(10, score));
+	const filled = Math.round((clamped / 10) * width);
+	return `${"█".repeat(filled)}${"░".repeat(width - filled)} ${clamped.toFixed(1)}`;
+}
+
+function scoreFor(item: ComparativeBenchmarkCaseResult, answer: ComparativeAnswer): number {
+	return item.judge.scores[answer.id]?.quality ?? 0;
+}
+
+function averageByLabel(results: ComparativeBenchmarkCaseResult[]): Array<{ label: string; quality: number; durationMs: number; cost: number; wins: number; count: number }> {
+	const aggregates = new Map<string, { label: string; quality: number; durationMs: number; cost: number; wins: number; count: number }>();
+	for (const item of results) {
+		const winner = item.judge.winner;
+		for (const answer of item.answers) {
+			const label = answerDisplay(answer);
+			const existing = aggregates.get(label) ?? { label, quality: 0, durationMs: 0, cost: 0, wins: 0, count: 0 };
+			existing.quality += scoreFor(item, answer);
+			existing.durationMs += answer.durationMs;
+			existing.cost += comparativeAnswerCost(answer);
+			existing.wins += winner === answer.id ? 1 : 0;
+			existing.count += 1;
+			aggregates.set(label, existing);
+		}
+	}
+	return Array.from(aggregates.values())
+		.map((item) => ({
+			...item,
+			quality: item.count ? item.quality / item.count : 0,
+			durationMs: item.count ? item.durationMs / item.count : 0,
+			cost: item.count ? item.cost / item.count : 0,
+		}))
+		.sort((a, b) => b.quality - a.quality);
+}
+
+function formatComparativeChart(results: ComparativeBenchmarkCaseResult[]): string {
+	const averages = averageByLabel(results);
+	if (averages.length === 0) return "No successful comparison results.";
+	return averages
+		.map((item) => `${item.label.padEnd(32).slice(0, 32)} ${scoreBar(item.quality)}  wins:${item.wins}/${item.count}  avg:${formatDuration(item.durationMs)}  avg cost:${formatCost(item.cost)}`)
+		.join("\n");
+}
+
+function formatComparativeExpandedDetails(details: ComparativeBenchmarkMessageDetails): string {
+	const sections = details.results.map((item, index) => {
+		if (item.error) {
+			return `## ${index + 1}. ${item.case.title} — failed\n\n\`\`\`text\n${item.error}\n\`\`\``;
+		}
+		const answers = item.answers
+			.map((answer) => `### ${answerDisplay(answer)} (${answer.id})\n\n${answer.error ? `Failed: ${answer.error}` : answer.text}`)
+			.join("\n\n---\n\n");
+		return `## ${index + 1}. ${item.case.title} — full comparison artifacts\n\n### Judge JSON\n\n\`\`\`json\n${JSON.stringify(item.judge, null, 2)}\n\`\`\`\n\n### Raw judge output\n\n\`\`\`\n${item.judgeRaw}\n\`\`\`\n\n### Full answers\n\n${answers}`;
+	});
+	return `\n\n---\n\n# Expanded solo-vs-fusion benchmark artifacts\n\n${sections.join("\n\n---\n\n")}`;
+}
+
+function formatComparativeCase(item: ComparativeBenchmarkCaseResult, index: number): string {
+	if (item.error) {
+		return `### ${index + 1}. ${item.case.title}\n\nFailed after ${formatDuration(item.durationMs)}:\n\n\`\`\`text\n${item.error}\n\`\`\``;
+	}
+
+	const rows = item.answers
+		.map((answer) => {
+			const score = item.judge.scores[answer.id];
+			const notes = score?.notes?.length ? score.notes.join("; ") : "";
+			return `| ${tableCell(answerDisplay(answer))} | ${answer.kind} | ${score?.quality?.toFixed(1) ?? "n/a"} | ${score?.correctness?.toFixed(1) ?? "n/a"} | ${score?.completeness?.toFixed(1) ?? "n/a"} | ${formatDuration(answer.durationMs)} | ${formatCost(comparativeAnswerCost(answer))} | ${tableCell(notes)} |`;
+		})
+		.join("\n");
+
+	const winner = item.answers.find((answer) => answer.id === item.judge.winner);
+	const fusion = item.answers.find((answer) => answer.kind === "fusion");
+	const bestSolo = item.answers
+		.filter((answer) => answer.kind === "single")
+		.sort((a, b) => scoreFor(item, b) - scoreFor(item, a))[0];
+	const delta = fusion && bestSolo ? scoreFor(item, fusion) - scoreFor(item, bestSolo) : 0;
+
+	return `### ${index + 1}. ${item.case.title}\n\n- Winner: ${winner ? answerDisplay(winner) : item.judge.winner}\n- Fusion gain: ${item.judge.fusion_gain}\n- Fusion vs best solo: ${delta >= 0 ? "+" : ""}${delta.toFixed(1)} quality points\n- Judge: ${item.judgeModel}\n- Duration: ${formatDuration(item.durationMs)}\n\n| Answer | Kind | Quality | Correctness | Completeness | Time | Cost | Notes |\n|---|---|---:|---:|---:|---:|---:|---|\n${rows}\n\n**Why winner**\n${item.judge.why_winner || "No rationale provided."}\n\n**Fusion strengths**\n${bulletList(item.judge.fusion_strengths)}\n\n**Fusion weaknesses**\n${bulletList(item.judge.fusion_weaknesses)}\n\n_Expand this message to inspect the full solo answers, Fusion answer, and raw judge output._`;
+}
+
+export function formatComparativeBenchmarkResults(profile: string, config: FusionConfig, results: ComparativeBenchmarkCaseResult[]): string {
+	const successful = results.filter((item) => !item.error);
+	const totalDuration = results.reduce((sum, item) => sum + item.durationMs, 0);
+	const totalCost = successful.reduce((sum, item) => sum + item.answers.reduce((inner, answer) => inner + comparativeAnswerCost(answer), 0), 0);
+	const totalCallsPerCase = Math.max(2, config.panelModels.length) * 2 + 3;
+	const caseDetails = results.map(formatComparativeCase).join("\n\n---\n\n");
+
+	return `## Pi Fusion solo-vs-fusion benchmark (${profile})\n\nThis compares each configured panel model running solo against the synthesized Fusion answer. A blind judge scores anonymized outputs on a 1–10 rubric. This is still an LLM-as-judge signal, not a formal eval, but it directly measures whether combining models improved output quality.\n\n**Config**\n- Solo baselines: ${config.panelModels.join(", ")}\n- Fusion: ${config.panelModels.join(" + ")} → judge → final writer\n- Quality judge: ${config.judgeModel || "(auto)"}\n- Output caps: solo ${config.finalMaxTokens}, panel ${config.panelMaxTokens}, judge ${config.judgeMaxTokens}, final ${config.finalMaxTokens}\n- Estimated calls per case: ${totalCallsPerCase} (${Math.max(2, config.panelModels.length)} solo + ${Math.max(2, config.panelModels.length)} panel + Fusion judge/final + quality judge)\n\n**Summary**\n- Successful cases: ${successful.length}/${results.length}\n- Total duration: ${formatDuration(totalDuration)}\n- Estimated total API cost: ${formatCost(totalCost)}\n\n**README-ready quality chart**\n\n\`\`\`text\n${formatComparativeChart(successful)}\n\`\`\`\n\n## Per-case comparison\n\n${caseDetails}`;
+}
+
 export function registerMessageRenderers(pi: ExtensionAPI): void {
 	pi.registerMessageRenderer<FusionResult>("pi-fusion", (message, options, theme) => {
 		const base = typeof message.content === "string" ? message.content : JSON.stringify(message.content);
@@ -162,6 +260,18 @@ export function registerMessageRenderers(pi: ExtensionAPI): void {
 			box.addChild(new Markdown(text, 0, 0, getMarkdownTheme()));
 		} catch {
 			box.addChild(new Text(theme.fg("customMessageLabel", "pi-fusion benchmark") + "\n" + text, 0, 0));
+		}
+		return box;
+	});
+
+	pi.registerMessageRenderer<ComparativeBenchmarkMessageDetails>("pi-fusion-benchmark-compare", (message, options, theme) => {
+		const base = typeof message.content === "string" ? message.content : JSON.stringify(message.content);
+		const text = options.expanded && message.details ? `${base}${formatComparativeExpandedDetails(message.details)}` : base;
+		const box = new Box(1, 1, (value: string) => theme.bg("customMessageBg", value));
+		try {
+			box.addChild(new Markdown(text, 0, 0, getMarkdownTheme()));
+		} catch {
+			box.addChild(new Text(theme.fg("customMessageLabel", "pi-fusion benchmark compare") + "\n" + text, 0, 0));
 		}
 		return box;
 	});
