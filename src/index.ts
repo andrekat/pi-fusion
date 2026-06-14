@@ -104,9 +104,9 @@ interface BenchmarkMessageDetails {
 }
 
 const DEFAULT_CONFIG: FusionConfig = {
-	panelModels: ["anthropic/claude-opus-4-8", "opencode/gpt-5.5-pro"],
-	judgeModel: "opencode/gpt-5.5-pro",
-	finalModel: "opencode/gpt-5.5-pro",
+	panelModels: ["anthropic/claude-opus-4-8", "openai-codex/gpt-5.5"],
+	judgeModel: "openai-codex/gpt-5.5",
+	finalModel: "openai-codex/gpt-5.5",
 	includeConversation: true,
 	conversationEntries: 12,
 	maxContextChars: 24_000,
@@ -123,13 +123,11 @@ const DEFAULT_CONFIG: FusionConfig = {
 
 const PREFERRED_FALLBACK_MODELS = [
 	"anthropic/claude-opus-4-8",
-	"opencode/gpt-5.5-pro",
-	"opencode/gpt-5.2-pro",
-	"openai/gpt-5.5-pro",
-	"azure-openai-responses/gpt-5.5-pro",
-	"openai/gpt-5.2-pro",
+	"openai-codex/gpt-5.5",
+	"openai-codex/gpt-5.4",
 	"anthropic/claude-sonnet-4-5",
-	"opencode/gpt-5.2",
+	"openai-codex/gpt-5.3-codex-spark",
+	"openai/gpt-5.5",
 	"openai/gpt-5.2",
 ];
 

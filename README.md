@@ -21,14 +21,14 @@ I checked npm/GitHub/web search for an exact `pi-fusion` package and did not fin
 {
   "panelModels": [
     "anthropic/claude-opus-4-8",
-    "opencode/gpt-5.5-pro"
+    "openai-codex/gpt-5.5"
   ],
-  "judgeModel": "opencode/gpt-5.5-pro",
-  "finalModel": "opencode/gpt-5.5-pro"
+  "judgeModel": "openai-codex/gpt-5.5",
+  "finalModel": "openai-codex/gpt-5.5"
 }
 ```
 
-Model refs are `provider/model-id`. Defaults prefer subscription-friendly `opencode/gpt-*` refs. If you configure `openai/gpt-5.5-pro` but have no OpenAI API key, pi-fusion will try an authenticated provider with the same model id, such as `opencode/gpt-5.5-pro`. For OpenRouter models with slashes in the model id, use `openrouter/<model-id>`, for example `openrouter/anthropic/claude-opus-4.8`.
+Model refs are `provider/model-id`. Defaults use Pi's subscription-friendly OpenAI Codex provider (`openai-codex/gpt-5.5`) plus Claude Opus. If you configure an unauthenticated provider/model, pi-fusion will try an authenticated provider with the same model id when one exists. For OpenRouter models with slashes in the model id, use `openrouter/<model-id>`, for example `openrouter/anthropic/claude-opus-4.8`.
 
 ## Install / run locally
 
