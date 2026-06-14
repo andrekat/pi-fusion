@@ -13,6 +13,16 @@ export function extractText(message: AssistantMessage): string {
 
 export function entryToMessage(entry: SessionEntry): AgentMessage | undefined {
 	if (entry.type === "message") return entry.message;
+	if (entry.type === "custom_message") {
+		return {
+			role: "custom",
+			customType: entry.customType,
+			content: entry.content,
+			display: entry.display,
+			details: entry.details,
+			timestamp: new Date(entry.timestamp).getTime(),
+		};
+	}
 	if (entry.type === "compaction") {
 		return {
 			role: "compactionSummary",

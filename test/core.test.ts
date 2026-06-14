@@ -4,7 +4,7 @@ import { DEFAULT_CONFIG, normalizeConfig } from "../src/config.ts";
 import { completionOptions, resolveUsableModel } from "../src/models.ts";
 import { findLastFusionResult } from "../src/session.ts";
 import type { CandidateAnswer, FusionResult } from "../src/types.ts";
-import { annotateCandidateCompleteness, normalizeConfidence, normalizeStopReason } from "../src/utils.ts";
+import { annotateCandidateCompleteness, entryToMessage, normalizeConfidence, normalizeStopReason } from "../src/utils.ts";
 
 function minimalResult(finalAnswer = "final"): FusionResult {
 	return {
@@ -93,7 +93,9 @@ describe("config and benchmark caps", () => {
 		expect(config.maxContextChars).toBe(0);
 		expect(config.panelMaxTokens).toBe(512);
 		expect(config.reasoningEffort).toBe(DEFAULT_CONFIG.reasoningEffort);
+		expect(config.panelExecution).toBe(DEFAULT_CONFIG.panelExecution);
 		expect(config.codeStrategy).toBe("parallel");
+		expect(normalizeConfig({ panelExecution: "completion" }).panelExecution).toBe("completion");
 	});
 
 	test("benchmark config uses fixed caps and lower reasoning", () => {
@@ -137,6 +139,23 @@ describe("model and session behavior", () => {
 		} as any;
 
 		expect(resolveUsableModel(ctx, "openai/gpt-5.5")?.ref).toBe("openai-codex/gpt-5.5");
+	});
+
+	test("converts custom_message entries into LLM context messages", () => {
+		const message = entryToMessage({
+			type: "custom_message",
+			id: "c1",
+			parentId: null,
+			timestamp: new Date(0).toISOString(),
+			customType: "pi-fusion",
+			content: "previous fusion answer",
+			display: true,
+			details: { ignored: true },
+		});
+
+		expect(message?.role).toBe("custom");
+		expect((message as any).customType).toBe("pi-fusion");
+		expect((message as any).content).toBe("previous fusion answer");
 	});
 
 	test("finds current custom_message and legacy message custom entries", () => {

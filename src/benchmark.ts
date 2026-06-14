@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { BorderedLoader } from "@earendil-works/pi-coding-agent";
 import { loadConfig } from "./config.ts";
-import { runFusion } from "./fusion.ts";
+import { runFusion, runPiExecution } from "./fusion.ts";
 import { choosePanelModels, chooseSingleModel, runCompletion } from "./models.ts";
 import { formatBenchmarkResults, formatComparativeBenchmarkResults } from "./render.ts";
 import type { BenchmarkCase, BenchmarkCaseResult, BenchmarkMessageDetails, ComparativeAnswer, ComparativeAnswerScore, ComparativeBenchmarkCaseResult, ComparativeBenchmarkMessageDetails, ComparativeJudgeDecision, FusionConfig, FusionMode, ResolvedModel } from "./types.ts";
@@ -165,6 +165,19 @@ async function runSingleBaseline(
 ): Promise<ComparativeAnswer> {
 	const started = Date.now();
 	try {
+		if (config.panelExecution === "pi") {
+			const response = await runPiExecution(ctx, config, model, baselineSystemPrompt(mode, model.ref), buildSoloTaskPrompt(prompt), signal);
+			return {
+				id: model.ref,
+				label: model.ref,
+				kind: "single",
+				modelRef: model.ref,
+				text: response.text,
+				durationMs: Date.now() - started,
+				stopReason: response.stopReason,
+			};
+		}
+
 		const response = await runCompletion(
 			ctx,
 			config,

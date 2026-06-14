@@ -3,6 +3,7 @@ import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 export type FusionMode = "general" | "plan" | "code" | "review";
 export type CodeStrategy = "parallel" | "propose-critique";
 export type ReasoningEffort = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+export type PanelExecution = "pi" | "completion";
 
 export interface FusionConfig {
 	panelModels: string[];
@@ -18,6 +19,7 @@ export interface FusionConfig {
 	judgeTemperature: number;
 	finalTemperature: number;
 	reasoningEffort: ReasoningEffort;
+	panelExecution: PanelExecution;
 	showIntermediate: boolean;
 	codeStrategy: CodeStrategy;
 }
@@ -42,6 +44,7 @@ export interface CandidateAnswer {
 	stopReason?: string;
 	missingRequiredSections?: string[];
 	usage?: AssistantMessage["usage"];
+	execution?: PanelExecution;
 	error?: string;
 }
 

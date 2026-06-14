@@ -1,3 +1,7 @@
+import { spawn } from "node:child_process";
+import { mkdtempSync, mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { convertToLlm, serializeConversation } from "@earendil-works/pi-coding-agent";
@@ -55,7 +59,7 @@ function formatCandidates(candidates: CandidateAnswer[]): string {
 			const completeness = candidate.missingRequiredSections
 				? `\nCompleteness: ${candidate.missingRequiredSections.length === 0 ? "all required sections present" : `missing required sections: ${candidate.missingRequiredSections.join(", ")}`}`
 				: "";
-			return `## model_${letter}: ${candidate.modelRef}\nRole: ${candidate.role}\n${status}${completeness}\n\n${candidate.error ? "" : candidate.text}`;
+			return `## model_${letter}: ${candidate.modelRef}\nRole: ${candidate.role}\nExecution: ${candidate.execution || "completion"}\n${status}${completeness}\n\n${candidate.error ? "" : candidate.text}`;
 		})
 		.join("\n\n---\n\n");
 }
@@ -66,6 +70,79 @@ function buildJudgePrompt(prompt: string, contextText: string, candidates: Candi
 
 function buildFinalPrompt(prompt: string, contextText: string, candidates: CandidateAnswer[], judgeRaw: string): string {
 	return `${buildTaskPrompt(prompt, contextText)}\n\n<judge_evaluation>\n${judgeRaw}\n</judge_evaluation>\n\n<candidate_answers>\n${formatCandidates(candidates)}\n</candidate_answers>`;
+}
+
+function panelExecutionPrompt(systemPrompt: string): string {
+	return `${systemPrompt}\n\nYou are running as a real Pi child execution, not a bare completion. Use the available Pi tools to inspect the actual repository/session when that would improve correctness. If the task refers to an ambiguous screen, file, prior commit, screenshot, or conversation detail and you cannot find grounding evidence, say exactly what is missing instead of guessing. For Fusion panel runs, prefer analysis and recommendations; do not modify files unless the user's task explicitly asks for implementation. If you do modify files, summarize the exact changes.`;
+}
+
+function truncateForError(text: string, maxChars = 1600): string {
+	const trimmed = text.trim();
+	if (trimmed.length <= maxChars) return trimmed;
+	return `${trimmed.slice(0, maxChars).trimEnd()}…`;
+}
+
+export function runPiExecution(
+	ctx: ExtensionCommandContext,
+	config: FusionConfig,
+	model: ResolvedModel,
+	systemPrompt: string,
+	userText: string,
+	signal: AbortSignal | undefined,
+): Promise<{ text: string; stopReason: string }> {
+	return new Promise((resolve, reject) => {
+		const runRoot = join(tmpdir(), "pi-fusion-runs");
+		mkdirSync(runRoot, { recursive: true });
+		const sessionDir = mkdtempSync(join(runRoot, "run-"));
+		const sessionFile = config.includeConversation ? ctx.sessionManager.getSessionFile() : undefined;
+		const args = [
+			"--model", model.ref,
+			"--thinking", config.reasoningEffort,
+			"--session-dir", sessionDir,
+			...(ctx.isProjectTrusted() ? ["--approve"] : ["--no-approve"]),
+			"--append-system-prompt", panelExecutionPrompt(systemPrompt),
+			"-p", userText,
+		];
+		if (sessionFile) {
+			args.unshift("--fork", sessionFile);
+		} else {
+			args.unshift("--no-session");
+		}
+
+		const child = spawn("pi", args, {
+			cwd: ctx.cwd,
+			env: process.env,
+			signal,
+			stdio: ["ignore", "pipe", "pipe"],
+		});
+
+		let stdout = "";
+		let stderr = "";
+		child.stdout.setEncoding("utf8");
+		child.stderr.setEncoding("utf8");
+		child.stdout.on("data", (chunk) => { stdout += chunk; });
+		child.stderr.on("data", (chunk) => { stderr += chunk; });
+		child.on("error", (error) => {
+			if (signal?.aborted) reject(new Error("aborted"));
+			else reject(error);
+		});
+		child.on("close", (code, childSignal) => {
+			if (signal?.aborted || childSignal === "SIGTERM" || childSignal === "SIGINT") {
+				reject(new Error("aborted"));
+				return;
+			}
+			if (code !== 0) {
+				reject(new Error(`pi child execution failed (${code ?? "unknown"}): ${truncateForError(stderr || stdout || "no output")}`));
+				return;
+			}
+			const text = stdout.trim();
+			if (!text) {
+				reject(new Error(`pi child execution produced no output${stderr.trim() ? `: ${truncateForError(stderr)}` : ""}`));
+				return;
+			}
+			resolve({ text, stopReason: "pi" });
+		});
+	});
 }
 
 async function runCandidate(
@@ -80,6 +157,19 @@ async function runCandidate(
 ): Promise<CandidateAnswer> {
 	const started = Date.now();
 	try {
+		if (config.panelExecution === "pi") {
+			const response = await runPiExecution(ctx, config, model, systemPrompt, userText, signal);
+			return {
+				label,
+				modelRef: model.ref,
+				role,
+				text: response.text,
+				durationMs: Date.now() - started,
+				stopReason: response.stopReason,
+				execution: "pi",
+			};
+		}
+
 		const response = await runCompletion(
 			ctx,
 			config,
@@ -103,6 +193,7 @@ async function runCandidate(
 			durationMs: Date.now() - started,
 			stopReason: normalizeStopReason(response.stopReason),
 			usage: response.usage,
+			execution: "completion",
 		};
 	} catch (error) {
 		return {
@@ -111,6 +202,7 @@ async function runCandidate(
 			role,
 			text: "",
 			durationMs: Date.now() - started,
+			execution: config.panelExecution,
 			error: error instanceof Error ? error.message : String(error),
 		};
 	}

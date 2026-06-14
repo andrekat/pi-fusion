@@ -8,7 +8,8 @@ export function formatFusionMessage(result: FusionResult, showIntermediate: bool
 	const panelSummary = result.panel
 		.map((candidate) => {
 			const status = candidate.error ? `failed: ${candidate.error}` : `ok (${formatDuration(candidate.durationMs)})`;
-			return `- ${candidate.label}: ${candidate.modelRef} — ${status}`;
+			const execution = candidate.execution ? ` via ${candidate.execution}` : "";
+			return `- ${candidate.label}: ${candidate.modelRef}${execution} — ${status}`;
 		})
 		.join("\n");
 
@@ -16,7 +17,8 @@ export function formatFusionMessage(result: FusionResult, showIntermediate: bool
 		? `\n\n**Tests/checks suggested by judge**\n${result.judge.tests_or_checks_needed.map((item) => `- ${item}`).join("\n")}`
 		: "";
 
-	let text = `## Pi Fusion (${result.mode})\n\n${result.finalAnswer}\n\n---\n**Fusion metadata**\n- Winner: ${result.judge.winner}\n- Confidence: ${Math.round(result.judge.confidence)}%\n- Judge: ${result.judgeModel}${result.judgeDurationMs ? ` (${formatDuration(result.judgeDurationMs)})` : ""}\n- Final writer: ${result.finalModel}${result.finalDurationMs ? ` (${formatDuration(result.finalDurationMs)})` : ""}\n- Duration: ${formatDuration(result.durationMs)}\n- Estimated API cost: ${formatCost(estimatedCost(result))}\n- Conversation context: ${result.contextIncluded ? "included" : "not included"}\n\n**Panel**\n${panelSummary}${checks}`;
+	const costNote = result.panel.some((candidate) => candidate.execution === "pi") ? " (excludes Pi child panel usage)" : "";
+	let text = `## Pi Fusion (${result.mode})\n\n${result.finalAnswer}\n\n---\n**Fusion metadata**\n- Winner: ${result.judge.winner}\n- Confidence: ${Math.round(result.judge.confidence)}%\n- Judge: ${result.judgeModel}${result.judgeDurationMs ? ` (${formatDuration(result.judgeDurationMs)})` : ""}\n- Final writer: ${result.finalModel}${result.finalDurationMs ? ` (${formatDuration(result.finalDurationMs)})` : ""}\n- Duration: ${formatDuration(result.durationMs)}\n- Estimated API cost: ${formatCost(estimatedCost(result))}${costNote}\n- Conversation context: ${result.contextIncluded ? "included" : "not included"}\n\n**Panel**\n${panelSummary}${checks}`;
 
 	if (showIntermediate) {
 		text += `\n\n<details>\n<summary>Judge JSON / raw output</summary>\n\n\`\`\`json\n${JSON.stringify(result.judge, null, 2)}\n\`\`\`\n\nRaw:\n\n\`\`\`\n${result.judgeRaw}\n\`\`\`\n</details>`;
@@ -33,9 +35,10 @@ export function detailsMarkdown(result: FusionResult): string {
 
 export function fusionOverviewMarkdown(result: FusionResult): string {
 	const panel = result.panel
-		.map((candidate) => `- ${candidate.label}: ${candidate.modelRef} — ${candidate.error ? `failed: ${candidate.error}` : `ok, ${formatDuration(candidate.durationMs)}${candidate.stopReason ? `, stop:${candidate.stopReason}` : ""}`}`)
+		.map((candidate) => `- ${candidate.label}: ${candidate.modelRef}${candidate.execution ? ` via ${candidate.execution}` : ""} — ${candidate.error ? `failed: ${candidate.error}` : `ok, ${formatDuration(candidate.durationMs)}${candidate.stopReason ? `, stop:${candidate.stopReason}` : ""}`}`)
 		.join("\n");
-	return `# Pi Fusion overview\n\n- Mode: ${result.mode}\n- Winner: ${result.judge.winner}\n- Confidence: ${Math.round(result.judge.confidence)}%\n- Judge: ${result.judgeModel}${result.judgeDurationMs ? ` (${formatDuration(result.judgeDurationMs)})` : ""}\n- Final writer: ${result.finalModel}${result.finalDurationMs ? ` (${formatDuration(result.finalDurationMs)})` : ""}\n- Duration: ${formatDuration(result.durationMs)}\n- Estimated API cost: ${formatCost(estimatedCost(result))}\n\n## Panel\n${panel}\n\n## Final synthesis\n\n${result.finalAnswer}`;
+	const costNote = result.panel.some((candidate) => candidate.execution === "pi") ? " (excludes Pi child panel usage)" : "";
+	return `# Pi Fusion overview\n\n- Mode: ${result.mode}\n- Winner: ${result.judge.winner}\n- Confidence: ${Math.round(result.judge.confidence)}%\n- Judge: ${result.judgeModel}${result.judgeDurationMs ? ` (${formatDuration(result.judgeDurationMs)})` : ""}\n- Final writer: ${result.finalModel}${result.finalDurationMs ? ` (${formatDuration(result.finalDurationMs)})` : ""}\n- Duration: ${formatDuration(result.durationMs)}\n- Estimated API cost: ${formatCost(estimatedCost(result))}${costNote}\n\n## Panel\n${panel}\n\n## Final synthesis\n\n${result.finalAnswer}`;
 }
 
 export function fusionWinnerMarkdown(result: FusionResult): string {
@@ -44,7 +47,7 @@ export function fusionWinnerMarkdown(result: FusionResult): string {
 
 export function fusionCandidatesMarkdown(result: FusionResult): string {
 	return result.panel
-		.map((candidate) => `# Candidate ${candidate.label}: ${candidate.modelRef}\n\n- Role: ${candidate.role}\n- Status: ${candidate.error ? `failed: ${candidate.error}` : "ok"}\n- Duration: ${formatDuration(candidate.durationMs)}\n${candidate.stopReason ? `- Stop reason: ${candidate.stopReason}\n` : ""}\n${candidate.error ? "" : candidate.text}`)
+		.map((candidate) => `# Candidate ${candidate.label}: ${candidate.modelRef}\n\n- Role: ${candidate.role}\n- Execution: ${candidate.execution || "completion"}\n- Status: ${candidate.error ? `failed: ${candidate.error}` : "ok"}\n- Duration: ${formatDuration(candidate.durationMs)}\n${candidate.stopReason ? `- Stop reason: ${candidate.stopReason}\n` : ""}\n${candidate.error ? "" : candidate.text}`)
 		.join("\n\n---\n\n");
 }
 
@@ -56,7 +59,8 @@ function formatCandidateStats(candidate: CandidateAnswer): string {
 	const cost = candidate.usage?.cost.total ? `, ${formatCost(candidate.usage.cost.total)}` : "";
 	const tokens = candidate.usage?.totalTokens ? `, ${candidate.usage.totalTokens.toLocaleString()} tokens` : "";
 	const stop = candidate.stopReason ? `, stop:${candidate.stopReason}` : "";
-	return `${candidate.modelRef} — ${candidate.error ? `failed: ${candidate.error}` : `ok, ${formatDuration(candidate.durationMs)}${tokens}${cost}${stop}`}`;
+	const execution = candidate.execution ? ` via ${candidate.execution}` : "";
+	return `${candidate.modelRef}${execution} — ${candidate.error ? `failed: ${candidate.error}` : `ok, ${formatDuration(candidate.durationMs)}${tokens}${cost}${stop}`}`;
 }
 
 function formatCompleteness(candidates: CandidateAnswer[]): string {
@@ -137,7 +141,7 @@ export function formatBenchmarkResults(profile: string, config: FusionConfig, re
 
 	const details = results.map(formatBenchmarkCaseDetails).join("\n\n---\n\n");
 
-	return `## Pi Fusion benchmark (${profile})\n\nThis is a lightweight benchmark using your configured flagship models, but with bounded prompts, no conversation context, and capped output tokens. Treat the score as a smoke/performance/value signal, not a formal eval.\n\n**Config**\n- Panel models: ${config.panelModels.join(", ")}\n- Judge: ${config.judgeModel || "(auto)"}\n- Final: ${config.finalModel || "(auto)"}\n- Output caps: panel ${config.panelMaxTokens}, judge ${config.judgeMaxTokens}, final ${config.finalMaxTokens}\n- Model calls attempted: ${benchmarkCallCount(config, results.map((item) => item.case))}\n\n**Summary**\n- Successful cases: ${successful.length}/${results.length}\n- Average judge confidence: ${successful.length ? `${Math.round(avgConfidence)}%` : "n/a"}\n- Total duration: ${formatDuration(totalDuration)}\n- Estimated total API cost: ${formatCost(totalCost)}\n\n| # | Case | Confidence | Winner | Time | Cost | Notes |\n|---:|---|---:|---|---:|---:|---|\n${rows}\n\n## Per-case comparison notes\n\n${details}`;
+	return `## Pi Fusion benchmark (${profile})\n\nThis is a lightweight benchmark using your configured flagship models, but with bounded prompts, no conversation context, and capped output tokens. Treat the score as a smoke/performance/value signal, not a formal eval.\n\n**Config**\n- Panel models: ${config.panelModels.join(", ")}\n- Judge: ${config.judgeModel || "(auto)"}\n- Final: ${config.finalModel || "(auto)"}\n- Output caps: panel ${config.panelMaxTokens}, judge ${config.judgeMaxTokens}, final ${config.finalMaxTokens}\n- Panel execution: ${config.panelExecution}\n- Model calls attempted: ${benchmarkCallCount(config, results.map((item) => item.case))}\n\n**Summary**\n- Successful cases: ${successful.length}/${results.length}\n- Average judge confidence: ${successful.length ? `${Math.round(avgConfidence)}%` : "n/a"}\n- Total duration: ${formatDuration(totalDuration)}\n- Estimated total API cost: ${formatCost(totalCost)}${config.panelExecution === "pi" ? " (excludes Pi child panel usage)" : ""}\n\n| # | Case | Confidence | Winner | Time | Cost | Notes |\n|---:|---|---:|---|---:|---:|---|\n${rows}\n\n## Per-case comparison notes\n\n${details}`;
 }
 
 function comparativeAnswerCost(answer: ComparativeAnswer): number {
@@ -235,7 +239,7 @@ export function formatComparativeBenchmarkResults(profile: string, config: Fusio
 	const totalCallsPerCase = Math.max(2, config.panelModels.length) * 2 + 3;
 	const caseDetails = results.map(formatComparativeCase).join("\n\n---\n\n");
 
-	return `## Pi Fusion solo-vs-fusion benchmark (${profile})\n\nThis compares each configured panel model running solo against the synthesized Fusion answer. A blind judge scores anonymized outputs on a 1–10 rubric. This is still an LLM-as-judge signal, not a formal eval, but it directly measures whether combining models improved output quality.\n\n**Config**\n- Solo baselines: ${config.panelModels.join(", ")}\n- Fusion: ${config.panelModels.join(" + ")} → judge → final writer\n- Quality judge: ${config.judgeModel || "(auto)"}\n- Output caps: solo ${config.finalMaxTokens}, panel ${config.panelMaxTokens}, judge ${config.judgeMaxTokens}, final ${config.finalMaxTokens}\n- Estimated calls per case: ${totalCallsPerCase} (${Math.max(2, config.panelModels.length)} solo + ${Math.max(2, config.panelModels.length)} panel + Fusion judge/final + quality judge)\n\n**Summary**\n- Successful cases: ${successful.length}/${results.length}\n- Total duration: ${formatDuration(totalDuration)}\n- Estimated total API cost: ${formatCost(totalCost)}\n\n**README-ready quality chart**\n\n\`\`\`text\n${formatComparativeChart(successful)}\n\`\`\`\n\n## Per-case comparison\n\n${caseDetails}`;
+	return `## Pi Fusion solo-vs-fusion benchmark (${profile})\n\nThis compares each configured panel model running solo against the synthesized Fusion answer. A blind judge scores anonymized outputs on a 1–10 rubric. This is still an LLM-as-judge signal, not a formal eval, but it directly measures whether combining models improved output quality.\n\n**Config**\n- Solo baselines: ${config.panelModels.join(", ")}\n- Fusion: ${config.panelModels.join(" + ")} → judge → final writer\n- Quality judge: ${config.judgeModel || "(auto)"}\n- Output caps: solo ${config.finalMaxTokens}, panel ${config.panelMaxTokens}, judge ${config.judgeMaxTokens}, final ${config.finalMaxTokens}\n- Panel/solo execution: ${config.panelExecution}\n- Estimated calls per case: ${totalCallsPerCase} (${Math.max(2, config.panelModels.length)} solo + ${Math.max(2, config.panelModels.length)} panel + Fusion judge/final + quality judge)\n\n**Summary**\n- Successful cases: ${successful.length}/${results.length}\n- Total duration: ${formatDuration(totalDuration)}\n- Estimated total API cost: ${formatCost(totalCost)}${config.panelExecution === "pi" ? " (excludes Pi child solo/panel usage)" : ""}\n\n**README-ready quality chart**\n\n\`\`\`text\n${formatComparativeChart(successful)}\n\`\`\`\n\n## Per-case comparison\n\n${caseDetails}`;
 }
 
 export function registerMessageRenderers(pi: ExtensionAPI): void {

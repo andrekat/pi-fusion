@@ -1,6 +1,6 @@
 # pi-fusion
 
-`pi-fusion` is a Pi extension that runs one prompt through multiple panel models, asks a judge model to evaluate the answers, then asks a final writer model to synthesize the useful answer back into the Pi session.
+`pi-fusion` is a Pi extension that runs one prompt through multiple real Pi child executions, asks a judge model to evaluate the answers, then asks a final writer model to synthesize the useful answer back into the Pi session.
 
 I checked npm/GitHub/web search for an exact `pi-fusion` package and did not find one. Related prior art exists: OpenRouter Fusion, plus Pi OpenRouter provider extensions.
 
@@ -25,7 +25,8 @@ I checked npm/GitHub/web search for an exact `pi-fusion` package and did not fin
     "openai-codex/gpt-5.5"
   ],
   "judgeModel": "openai-codex/gpt-5.5",
-  "finalModel": "openai-codex/gpt-5.5"
+  "finalModel": "openai-codex/gpt-5.5",
+  "panelExecution": "pi"
 }
 ```
 
@@ -71,12 +72,13 @@ A trusted project may override it with:
 
 ## Flow
 
-1. Panel models answer independently in parallel.
-2. `/fuse-code` can use a smarter proposer + critic strategy.
-3. Judge returns forced JSON with winner, issues, contradictions, confidence, and tests/checks.
-4. Final writer produces the answer shown in the Pi session.
+1. Panel models run as real non-interactive Pi child agents (`pi -p`) by default.
+2. Each child agent forks the current session when available, uses the selected model, loads normal Pi project context, and has normal Pi tool privileges for the trusted project.
+3. `/fuse-code` can use a smarter proposer + critic strategy.
+4. Judge returns forced JSON with winner, issues, contradictions, confidence, and tests/checks.
+5. Final writer produces the answer shown in the Pi session.
 
-The judge prompt explicitly avoids “just summarize” behavior.
+The judge prompt explicitly avoids “just summarize” behavior. The panel execution mode can be changed to direct model completions by setting `panelExecution` to `"completion"`, but the default is `"pi"` so panelists can inspect files instead of guessing from chat text alone.
 
 ## Benchmarking without lighting money on fire
 
@@ -94,7 +96,7 @@ Profiles:
 - `/fuse-bench standard` — 3 cases
 - `/fuse-bench full` — 5 cases
 
-The benchmark reports latency, judge confidence, winner, required-section completeness, normalized stop reasons, critical issue count, and estimated API cost from provider usage metadata when available. Expand the benchmark message to inspect the full final synthesis, judge JSON/raw output, and full candidate answers. It is a lightweight signal, not a formal eval.
+The benchmark reports latency, judge confidence, winner, required-section completeness, normalized stop reasons, critical issue count, and estimated API cost from provider usage metadata when available. In Pi-execution mode, reported cost can exclude child Pi panel runs because the child process returns text, not structured usage. Expand the benchmark message to inspect the full final synthesis, judge JSON/raw output, and full candidate answers. It is a lightweight signal, not a formal eval.
 
 ### Solo vs Fusion quality benchmark
 
@@ -106,7 +108,7 @@ The benchmark reports latency, judge confidence, winner, required-section comple
 
 Then a blind quality judge scores the anonymized outputs on correctness, completeness, clarity, actionability, and overall quality.
 
-Example standard run with the default models (`/fuse-bench-compare standard`, 3 cases):
+Example standard run with the default model pair, captured in completion-mode benchmarking (`/fuse-bench-compare standard`, 3 cases). Pi-execution mode is more grounded but may have different latency/cost because child Pi usage metadata is not always available:
 
 ```text
 Quality score, 1–10 higher is better
@@ -116,10 +118,10 @@ openai-codex/gpt-5.5             █████████████░░�
 anthropic/claude-opus-4-8        █████████████░░░ 8.0  wins:0/3  avg:18.2s  avg cost:$0.031
 ```
 
-| Approach | Avg quality | Wins | Avg latency | Avg cost | Takeaway |
+| Approach | Avg quality | Wins | Avg latency | Avg reported cost | Takeaway |
 |---|---:|---:|---:|---:|---|
 | Fusion | 9.0 | 2/3 | 65.0s | $0.143 | Best quality on planning/review tasks; pays a latency/cost premium. |
 | OpenAI Codex GPT-5.5 solo | 8.3 | 1/3 | 16.6s | $0.023 | Fastest/cheapest; won the small bugfix case outright. |
 | Claude Opus 4.8 solo | 8.0 | 0/3 | 18.2s | $0.031 | Strong solo baseline, but Fusion kept more cross-model caveats. |
 
-Treat this as directional: it measures whether Fusion improves the judged answer, while also showing when a single flagship model is already enough.
+Treat this as directional: it measures whether Fusion improves the judged answer, while also showing when a single flagship model is already enough. In `panelExecution: "pi"` mode, reported cost can exclude child Pi runs when provider usage metadata is not exposed by the child process.

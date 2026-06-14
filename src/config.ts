@@ -18,6 +18,7 @@ export const DEFAULT_CONFIG: FusionConfig = {
 	judgeTemperature: 0,
 	finalTemperature: 0.2,
 	reasoningEffort: "high",
+	panelExecution: "pi",
 	showIntermediate: false,
 	codeStrategy: "propose-critique",
 };
@@ -66,6 +67,7 @@ export function normalizeConfig(input: unknown, base: FusionConfig = DEFAULT_CON
 		? (raw.reasoningEffort as ReasoningEffort)
 		: base.reasoningEffort;
 	const codeStrategy = raw.codeStrategy === "parallel" || raw.codeStrategy === "propose-critique" ? raw.codeStrategy : base.codeStrategy;
+	const panelExecution = raw.panelExecution === "completion" || raw.panelExecution === "pi" ? raw.panelExecution : base.panelExecution;
 
 	return {
 		panelModels: asStringArray(raw.panelModels, base.panelModels),
@@ -81,6 +83,7 @@ export function normalizeConfig(input: unknown, base: FusionConfig = DEFAULT_CON
 		judgeTemperature: asNumber(raw.judgeTemperature, base.judgeTemperature, 0, 2),
 		finalTemperature: asNumber(raw.finalTemperature, base.finalTemperature, 0, 2),
 		reasoningEffort,
+		panelExecution,
 		showIntermediate: asBoolean(raw.showIntermediate, base.showIntermediate),
 		codeStrategy,
 	};
@@ -121,6 +124,7 @@ export function configSummary(config: FusionConfig): string {
 		`Conversation entries: ${config.conversationEntries}`,
 		`Max context chars: ${config.maxContextChars}`,
 		`Reasoning effort: ${config.reasoningEffort}`,
+		`Panel execution: ${config.panelExecution}`,
 		`Code strategy: ${config.codeStrategy}`,
 		`Show intermediate: ${config.showIntermediate ? "yes" : "no"}`,
 	].join("\n");

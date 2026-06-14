@@ -101,6 +101,7 @@ async function openSettings(ctx: ExtensionCommandContext): Promise<void> {
 			"Set context entry count",
 			"Set max context chars",
 			"Set reasoning effort",
+			"Set panel execution",
 			"Set code strategy",
 			`Toggle intermediate output (${config.showIntermediate ? "on" : "off"})`,
 			"Show current config",
@@ -154,6 +155,12 @@ async function openSettings(ctx: ExtensionCommandContext): Promise<void> {
 			const value = await ctx.ui.select("Reasoning effort", ["off", "minimal", "low", "medium", "high", "xhigh"]);
 			if (value) {
 				config = { ...config, reasoningEffort: value as ReasoningEffort };
+				dirty = true;
+			}
+		} else if (action === "Set panel execution") {
+			const value = await ctx.ui.select("Panel execution", ["pi", "completion"]);
+			if (value) {
+				config = { ...config, panelExecution: value as "pi" | "completion" };
 				dirty = true;
 			}
 		} else if (action === "Set code strategy") {
